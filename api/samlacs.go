@@ -228,21 +228,26 @@ func (a *API) SAMLACS(w http.ResponseWriter, r *http.Request) error {
 	// refreshTokenParams.NotBefore = assertion.NotBefore()
 	// refreshTokenParams.NotAfter = assertion.NotAfter()
 
+	notAfter := assertion.NotAfter()
+
+	var grantParams models.GrantParams
+
+	if !notAfter.IsZero() {
+		grantParams.SessionNotAfter = &notAfter
+	}
+
 	var token *AccessTokenResponse
 
 	if err := db.Transaction(func(tx *storage.Connection) error {
 		var terr error
 		var user *models.User
 
-		if user, terr = a.createAccountFromExternalIdentity(tx, r, &userProvidedData, "sso:"+ssoProvider.ID.String(), user); terr != nil {
+		// accounts potentially created via SAML can contain non-unique email addresses in the auth.users table
+		if user, terr = a.createAccountFromExternalIdentity(tx, r, &userProvidedData, "sso:"+ssoProvider.ID.String()); terr != nil {
 			return terr
 		}
 
-		if config.MFA.Enabled {
-			token, terr = a.MFA_issueRefreshToken(ctx, tx, user, models.SSOSAML, models.GrantParams{})
-		} else {
-			token, terr = a.issueRefreshToken(ctx, tx, user, models.GrantParams{})
-		}
+		token, terr = a.issueRefreshToken(ctx, tx, user, models.SSOSAML, grantParams)
 
 		if terr != nil {
 			return internalServerError("Unable to issue refresh token from SAML Assertion").WithInternalError(terr)

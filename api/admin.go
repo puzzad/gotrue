@@ -274,9 +274,9 @@ func (a *API) adminUserCreate(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if exists, err := models.IsDuplicatedEmail(db, params.Email, aud); err != nil {
+		if user, err := models.IsDuplicatedEmail(db, params.Email, aud); err != nil {
 			return internalServerError("Database error checking email").WithInternalError(err)
-		} else if exists {
+		} else if user != nil {
 			return unprocessableEntityError("Email address already registered by another user")
 		}
 	}
@@ -406,14 +406,7 @@ func (a *API) adminUserDeleteFactor(w http.ResponseWriter, r *http.Request) erro
 	user := getUser(ctx)
 	factor := getFactor(ctx)
 
-	MFAEnabled, err := models.IsMFAEnabled(a.db, user)
-	if err != nil {
-		return err
-	} else if !MFAEnabled {
-		return forbiddenError("You do not have a verified factor enrolled")
-	}
-
-	err = a.db.Transaction(func(tx *storage.Connection) error {
+	err := a.db.Transaction(func(tx *storage.Connection) error {
 		if terr := models.NewAuditLogEntry(r, tx, user, models.DeleteFactorAction, r.RemoteAddr, map[string]interface{}{
 			"user_id":   user.ID,
 			"factor_id": factor.ID,

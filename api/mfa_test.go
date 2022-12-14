@@ -40,9 +40,7 @@ func TestMFA(t *testing.T) {
 		Config: config,
 	}
 	defer api.db.Close()
-	if config.MFA.Enabled {
-		suite.Run(t, ts)
-	}
+	suite.Run(t, ts)
 }
 
 func (ts *MFATestSuite) SetupTest() {
@@ -56,8 +54,10 @@ func (ts *MFATestSuite) SetupTest() {
 	require.NoError(ts.T(), err, "Error creating test factor model")
 	require.NoError(ts.T(), ts.API.db.Create(f), "Error saving new test factor")
 	// Create corresponding sessoin
-	s, err := models.NewSession(u, &f.ID)
+	s, err := models.NewSession()
 	require.NoError(ts.T(), err, "Error creating test session")
+	s.UserID = u.ID
+	s.FactorID = &f.ID
 	require.NoError(ts.T(), ts.API.db.Create(s), "Error saving test session")
 
 	// Generate TOTP related settings
@@ -124,7 +124,7 @@ func (ts *MFATestSuite) TestEnrollFactor() {
 			user, err := models.FindUserByEmailAndAudience(ts.API.db, "test@example.com", ts.Config.JWT.Aud)
 			ts.Require().NoError(err)
 
-			token, err := MFA_generateAccessToken(ts.API.db, user, nil, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
+			token, err := generateAccessToken(ts.API.db, user, nil, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
 			require.NoError(ts.T(), err)
 
 			w := httptest.NewRecorder()
@@ -161,7 +161,7 @@ func (ts *MFATestSuite) TestChallengeFactor() {
 	require.NoError(ts.T(), err)
 	f := factors[0]
 
-	token, err := MFA_generateAccessToken(ts.API.db, u, nil, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
+	token, err := generateAccessToken(ts.API.db, u, nil, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
 	require.NoError(ts.T(), err, "Error generating access token")
 
 	var buffer bytes.Buffer
@@ -216,11 +216,13 @@ func (ts *MFATestSuite) TestMFAVerifyFactor() {
 			require.NoError(ts.T(), ts.API.db.Update(f), "Error updating new test factor")
 
 			// Create session to be invalidated
-			secondarySession, err := models.NewSession(user, &f.ID)
+			secondarySession, err := models.NewSession()
 			require.NoError(ts.T(), err, "Error creating test session")
+			secondarySession.UserID = user.ID
+			secondarySession.FactorID = &f.ID
 			require.NoError(ts.T(), ts.API.db.Create(secondarySession), "Error saving test session")
 
-			token, err := MFA_generateAccessToken(ts.API.db, user, r.SessionId, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
+			token, err := generateAccessToken(ts.API.db, user, r.SessionId, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
 
 			require.NoError(ts.T(), err)
 
@@ -256,7 +258,7 @@ func (ts *MFATestSuite) TestMFAVerifyFactor() {
 
 			if v.expectedHTTPCode == http.StatusOK {
 				// Ensure alternate session has been deleted
-				_, err = models.FindSessionById(ts.API.db, secondarySession.ID)
+				_, err = models.FindSessionByID(ts.API.db, secondarySession.ID)
 				require.EqualError(ts.T(), err, models.SessionNotFoundError{}.Error())
 			}
 			if !v.validChallenge {
@@ -302,8 +304,10 @@ func (ts *MFATestSuite) TestUnenrollVerifiedFactor() {
 			factors, err := models.FindFactorsByUser(ts.API.db, u)
 			require.NoError(ts.T(), err, "error finding factors")
 			f := factors[0]
-			secondarySession, err = models.NewSession(u, &f.ID)
+			secondarySession, err = models.NewSession()
 			require.NoError(ts.T(), err, "Error creating test session")
+			secondarySession.UserID = u.ID
+			secondarySession.FactorID = &f.ID
 			require.NoError(ts.T(), ts.API.db.Create(secondarySession), "Error saving test session")
 
 			sharedSecret := ts.TestOTPKey.Secret()
@@ -314,7 +318,7 @@ func (ts *MFATestSuite) TestUnenrollVerifiedFactor() {
 
 			var buffer bytes.Buffer
 
-			token, err := MFA_generateAccessToken(ts.API.db, u, &s.ID, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
+			token, err := generateAccessToken(ts.API.db, u, &s.ID, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
 			require.NoError(ts.T(), err)
 
 			w := httptest.NewRecorder()
@@ -326,7 +330,7 @@ func (ts *MFATestSuite) TestUnenrollVerifiedFactor() {
 			if v.expectedHTTPCode == http.StatusOK {
 				_, err = models.FindFactorByFactorID(ts.API.db, f.ID)
 				require.EqualError(ts.T(), err, models.FactorNotFoundError{}.Error())
-				session, _ := models.FindSessionById(ts.API.db, secondarySession.ID)
+				session, _ := models.FindSessionByID(ts.API.db, secondarySession.ID)
 				require.Equal(ts.T(), models.AAL1.String(), session.GetAAL())
 				require.Nil(ts.T(), session.FactorID)
 
@@ -345,8 +349,10 @@ func (ts *MFATestSuite) TestUnenrollUnverifiedFactor() {
 	factors, err := models.FindFactorsByUser(ts.API.db, u)
 	require.NoError(ts.T(), err, "error finding factors")
 	f := factors[0]
-	secondarySession, err = models.NewSession(u, &f.ID)
+	secondarySession, err = models.NewSession()
 	require.NoError(ts.T(), err, "Error creating test session")
+	secondarySession.UserID = u.ID
+	secondarySession.FactorID = &f.ID
 	require.NoError(ts.T(), ts.API.db.Create(secondarySession), "Error saving test session")
 
 	sharedSecret := ts.TestOTPKey.Secret()
@@ -354,7 +360,7 @@ func (ts *MFATestSuite) TestUnenrollUnverifiedFactor() {
 
 	var buffer bytes.Buffer
 
-	token, err := MFA_generateAccessToken(ts.API.db, u, &s.ID, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
+	token, err := generateAccessToken(ts.API.db, u, &s.ID, time.Second*time.Duration(ts.Config.JWT.Exp), ts.Config.JWT.Secret)
 	require.NoError(ts.T(), err)
 	require.NoError(ts.T(), json.NewEncoder(&buffer).Encode(map[string]interface{}{
 		"factor_id": f.ID,
@@ -367,7 +373,7 @@ func (ts *MFATestSuite) TestUnenrollUnverifiedFactor() {
 	require.Equal(ts.T(), http.StatusOK, w.Code)
 	_, err = models.FindFactorByFactorID(ts.API.db, f.ID)
 	require.EqualError(ts.T(), err, models.FactorNotFoundError{}.Error())
-	session, _ := models.FindSessionById(ts.API.db, secondarySession.ID)
+	session, _ := models.FindSessionByID(ts.API.db, secondarySession.ID)
 	require.Equal(ts.T(), models.AAL1.String(), session.GetAAL())
 	require.Nil(ts.T(), session.FactorID)
 
@@ -392,7 +398,7 @@ func (ts *MFATestSuite) TestSessionsMaintainAALOnRefresh() {
 	data := &AccessTokenResponse{}
 	require.NoError(ts.T(), json.NewDecoder(w.Body).Decode(&data))
 
-	ctx, err := ts.API.parseJWTClaims(data.Token, req, w)
+	ctx, err := ts.API.parseJWTClaims(data.Token, req)
 	require.NoError(ts.T(), err)
 	ctx, err = ts.API.maybeLoadUserOrSession(ctx)
 	require.NoError(ts.T(), err)
@@ -418,7 +424,7 @@ func (ts *MFATestSuite) TestMFAFollowedByPasswordSignIn() {
 
 	data := &AccessTokenResponse{}
 	require.NoError(ts.T(), json.NewDecoder(w.Body).Decode(&data))
-	ctx, err := ts.API.parseJWTClaims(data.Token, req, w)
+	ctx, err := ts.API.parseJWTClaims(data.Token, req)
 	require.NoError(ts.T(), err)
 	ctx, err = ts.API.maybeLoadUserOrSession(ctx)
 	require.NoError(ts.T(), err)
