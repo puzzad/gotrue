@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -42,13 +43,6 @@ const defaultInviteMail = `<h2>You have been invited</h2>
 <p>You have been invited to create a user on {{ .SiteURL }}. Follow this link to accept the invite:</p>
 <p><a href="{{ .ConfirmationURL }}">Accept the invite</a></p>
 <p>Alternatively, enter the code: {{ .Token }}</p>`
-
-const defaultConfirmationMail = `<h2>Confirm your email</h2>
-
-<p>Follow this link to confirm your email:</p>
-<p><a href="{{ .ConfirmationURL }}">Confirm your email address</a></p>
-<p>Alternatively, enter the code: {{ .Token }}</p>
-`
 
 const defaultRecoveryMail = `<h2>Reset password</h2>
 
@@ -121,13 +115,7 @@ func (m *TemplateMailer) ConfirmationMail(user *models.User, otp, referrerURL st
 		"Data":            user.UserMetaData,
 	}
 
-	return m.Mailer.Mail(
-		user.GetEmail(),
-		string(withDefault(m.Config.Mailer.Subjects.Confirmation, "Confirm Your Email")),
-		m.Config.Mailer.Templates.Confirmation,
-		defaultConfirmationMail,
-		data,
-	)
+	return sendConfirmationEmail(context.Background(), user.EmailChange, url)
 }
 
 // ReauthenticateMail sends a reauthentication mail to an authenticated user
