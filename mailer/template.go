@@ -107,7 +107,7 @@ func (m *TemplateMailer) ConfirmationMail(user *models.User, otp, referrerURL st
 		return err
 	}
 
-	return sendConfirmationEmail(context.Background(), user.EmailChange, url)
+	return sendConfirmationEmail(context.Background(), user.GetEmail(), url)
 }
 
 // ReauthenticateMail sends a reauthentication mail to an authenticated user
