@@ -106,14 +106,6 @@ func (m *TemplateMailer) ConfirmationMail(user *models.User, otp, referrerURL st
 	if err != nil {
 		return err
 	}
-	data := map[string]interface{}{
-		"SiteURL":         m.Config.SiteURL,
-		"ConfirmationURL": url,
-		"Email":           user.Email,
-		"Token":           otp,
-		"TokenHash":       user.ConfirmationToken,
-		"Data":            user.UserMetaData,
-	}
 
 	return sendConfirmationEmail(context.Background(), user.EmailChange, url)
 }
